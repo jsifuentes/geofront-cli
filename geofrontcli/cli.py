@@ -13,6 +13,8 @@ import sys
 import webbrowser
 
 from dirspec.basedir import load_config_paths, save_config_path
+from iterfzf import iterfzf
+from logging_spinner import SpinnerHandler, UserWaitingFilter
 from six.moves import input
 
 from .client import (REMOTE_PATTERN, Client, ExpiredTokenIdError,
@@ -202,17 +204,25 @@ masterkey.add_argument(
 )
 
 
+def align_remote_list(remotes):
+    maxlength = max(map(len, remotes)) if remotes else 0
+    for alias, remote in sorted(remotes.items()):
+        if remote.endswith(':22'):
+            remote = remote[:-3]
+        yield '{0:{1}}  {2}'.format(alias, maxlength, remote)
+
+
 @subparser
 def remotes(args):
     """List available remotes."""
     client = get_client()
     remotes = client.remotes
     if args.alias:
-        for alias in remotes:
+        for alias in sorted(remotes):
             print(alias)
     else:
-        for alias, remote in remotes.items():
-            print('{0}\t{1}'.format(alias, remote))
+        for line in align_remote_list(remotes):
+            print(line)
 
 
 remotes.add_argument(
@@ -224,18 +234,25 @@ remotes.add_argument(
 
 
 @subparser
-def authorize(args):
+def authorize(args, alias=None):
     """Temporarily authorize you to access the given remote.
     A made authorization keeps alive in a minute, and then will be expired.
 
     """
     client = get_client()
-    try:
-        client.authorize(args.remote)
-    except RemoteError as e:
-        print(e, file=sys.stderr)
-        if args.debug:
-            raise
+    while True:
+        try:
+            remote = client.authorize(alias or args.remote)
+        except RemoteError as e:
+            print(e, file=sys.stderr)
+            if args.debug:
+                raise
+        except TokenIdError:
+            print('Authentication required.', file=sys.stderr)
+            authenticate.call(args)
+        else:
+            break
+    return remote
 
 
 authorize.add_argument(
@@ -305,21 +322,9 @@ colonize.add_argument('remote', help='the remote alias to colonize')
 
 
 @subparser
-def ssh(args):
+def ssh(args, alias=None):
     """SSH to the remote through Geofront's temporary authorization."""
-    while True:
-        client = get_client()
-        try:
-            remote = client.authorize(args.remote)
-        except RemoteError as e:
-            ssh.error(str(e))
-            if args.debug:
-                raise
-        except TokenIdError:
-            print('Authentication required.')
-            authenticate.call(args)
-        else:
-            break
+    remote = authorize.call(args, alias=alias)
     try:
         options = get_ssh_options(remote)
     except ValueError as e:
@@ -333,34 +338,21 @@ ssh.add_argument('remote', help='the remote alias to ssh')
 def parse_scp_path(path, args):
     """Parse remote:path format."""
     if ':' not in path:
-        return None, None, path
+        return None, path
     alias, path = path.split(':', 1)
-    while True:
-        client = get_client()
-        try:
-            remote = client.authorize(alias)
-        except RemoteError as e:
-            print(e, file=sys.stderr)
-            if args.debug:
-                raise
-            raise SystemExit(1)
-        except TokenIdError:
-            print('Authentication required.')
-            authenticate.call(args)
-        else:
-            break
-    return client, remote, path
+    remote = authorize.call(args, alias=alias)
+    return remote, path
 
 
 @subparser
 def scp(args):
     options = []
-    src_client, src_remote, src_path = parse_scp_path(args.source, args)
-    dst_client, dst_remote, dst_path = parse_scp_path(args.destination, args)
-    if src_client and dst_client:
+    src_remote, src_path = parse_scp_path(args.source, args)
+    dst_remote, dst_path = parse_scp_path(args.destination, args)
+    if src_remote and dst_remote:
         scp.error('source and destination cannot be both '
                   'remote paths at a time')
-    elif not (src_client or dst_client):
+    elif not (src_remote or dst_remote):
         scp.error('one of source and destination has to be a remote path')
     if args.ssh:
         options.extend(['-S', args.ssh])
@@ -403,7 +395,19 @@ scp.add_argument('source', help='the source path to copy')
 scp.add_argument('destination', help='the destination path')
 
 
-for p in authenticate, start, ssh, scp:
+@subparser
+def go(args):
+    """Select a remote and SSH to it at once (in interactive way)."""
+    client = get_client()
+    remotes = client.remotes
+    chosen = iterfzf(align_remote_list(remotes))
+    if chosen is None:
+        return
+    alias = chosen.split()[0]
+    ssh.call(args, alias=alias)
+
+
+for p in authenticate, authorize, start, ssh, scp, go:
     p.add_argument(
         '-O', '--no-open-browser',
         dest='open_browser',
@@ -454,6 +458,8 @@ def fix_mac_codesign():
 def main(args=None):
     args = parser.parse_args(args)
     log_handler = logging.StreamHandler(sys.stdout)
+    log_handler.addFilter(UserWaitingFilter())
+    spinner_handler = SpinnerHandler(sys.stdout)
     local = logging.getLogger('geofrontcli')
     if args.debug:
         root = logging.getLogger()
@@ -463,6 +469,7 @@ def main(args=None):
     else:
         local.setLevel(logging.INFO)
     local.addHandler(log_handler)
+    local.addHandler(spinner_handler)
     if sys.platform == 'darwin':
         fix_mac_codesign()
     if getattr(args, 'function', None):
@@ -480,3 +487,8 @@ def main(args=None):
                         'The server version is {0}.'.format(e.server_version))
     else:
         parser.print_usage()
+
+
+def main_go():
+    parser.prog = 'geofront-cli'
+    main(['go'])

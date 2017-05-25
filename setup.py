@@ -22,7 +22,9 @@ def readme():
 
 install_requires = {
     'certifi',
+    'iterfzf >= 0.2.0.16.7, < 1.0.0.0.0',
     'keyring >= 3.7',
+    'logging-spinner >= 0.2.1',
     'six',
 }
 
@@ -56,6 +58,7 @@ setup(
     entry_points='''
         [console_scripts]
         geofront-cli = geofrontcli.cli:main
+        gfg = geofrontcli.cli:main_go
     ''',
     install_requires=list(install_requires),
     extras_require={

@@ -100,6 +100,22 @@ command instead of vanilla ``ssh``:
     * Documentation:  https://help.ubuntu.com/
    ubuntu@web-1:~$ 
 
+In most cases, you probably need to list remotes to find an alias to SSH
+before run ``geofront-cli ssh`` command.  ``geofront-cli go`` command is
+a single command for these two actions at once:
+
+.. code-block:: console
+
+   $ geofront-cli go
+   (...interactive fuzzy finder for remotes is shown...)
+   Welcome to Ubuntu 12.04.3 LTS (GNU/Linux 2.6.32-042stab078.27 i686)
+
+    * Documentation:  https://help.ubuntu.com/
+   ubuntu@web-1:~$ 
+
+Note that there's a shortcut command ``gfg`` which is an alias of
+``geofront-cli go``.
+
 There is ``geofront-cli scp`` command as well, which is corresponding
 to ``scp``:
 
@@ -134,14 +150,35 @@ __ https://hongminhee.org/
 Changelog
 ---------
 
+Version 0.4.1
+`````````````
+
+Released on May 24, 2017.
+
+- Fixed a bug that ``geofront-cli go``/``gfg`` had crashed with
+  ``AttributeError`` when a user cancelled (i.e. Ctrl-C) to select a remote.
+  [`#10`__]
+
+__ https://github.com/spoqa/geofront-cli/issues/10
+
+
 Version 0.4.0
 `````````````
 
-To be released.
+Released on May 23, 2017.
 
 - Dropped support of Python 2.6 and 3.2.
+- ``geofront-cli go`` command and its alias shortcut ``gfg`` were introduced.
+  It's an interactive user interface to select a remote and SSH to it at once.
 - Fixed verification failure of SSL certificates when Python was installed
   using Homebrew on macOS.  Now it depends on Certifi_.
+- Now the output list of ``geofront-cli remotes`` is sorted.
+- The second column of ``geofront-cli remotes --verbose`` result became
+  vertically aligned.
+- The second column of ``geofront-cli remotes --verbose`` result became
+  to omit the port number if it's 22 so that these are easy to copy-and-paste
+  into other SSH programs.
+- Loading spinners became shown when time-taking tasks are running.
 
 .. _Certifi: https://github.com/certifi/python-certifi
 
